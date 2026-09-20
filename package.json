@@ -4,7 +4,13 @@
   "description": "All-in-one Uptime & VPS Server Health Monitor with WhatsApp, Email, and Android Push Alerts",
   "main": "server/dist/index.js",
   "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
+    "install:all": "npm --prefix client install && npm --prefix server install",
+    "postinstall": "npm run install:all",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "build:client": "npm --prefix client run build",
