@@ -1,0 +1,38 @@
+name: VPS 24/7 Health Watchdog
+
+on:
+  schedule:
+    # Run every 5 minutes around the clock (24/7)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+
+jobs:
+  check-vps:
+    name: Ping Hostinger VPS & Check Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install nodemailer
+
+      - name: Run VPS Watchdog Ping
+        env:
+          VPS_HOST: '168.231.119.84'
+          VPS_PORT: '22'
+          TIMEOUT_MS: '8000'
+          GMAIL_USER: ${{ secrets.GMAIL_USER || 'aaronaji047@gmail.com' }}
+          GMAIL_PASS: ${{ secrets.GMAIL_PASS || 'rgnzdlkylwnmdlpx' }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS || 'aaronaji047@gmail.com, shinchan.aaron1@gmail.com, bijoyhornsby@gmail.com' }}
+          CALLMEBOT_KEY_1: ${{ secrets.CALLMEBOT_KEY_1 || '' }}
+          CALLMEBOT_KEY_2: ${{ secrets.CALLMEBOT_KEY_2 || '' }}
+        run: node scripts/watchdog.js

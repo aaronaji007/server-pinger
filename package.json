@@ -27,5 +27,8 @@
     "vps-monitor"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "nodemailer": "^10.0.10"
+  }
 }
