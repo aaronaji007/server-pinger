@@ -1,0 +1,25 @@
+{
+  "name": "pulseguard",
+  "version": "1.0.0",
+  "description": "All-in-one Uptime & VPS Server Health Monitor with WhatsApp, Email, and Android Push Alerts",
+  "main": "server/dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build:client": "npm --prefix client run build",
+    "build:server": "npm --prefix server run build",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node server/dist/index.js"
+  },
+  "keywords": [
+    "uptime-monitor",
+    "status-page",
+    "ping-checker",
+    "whatsapp-alerts",
+    "android-push",
+    "vps-monitor"
+  ],
+  "author": "",
+  "license": "MIT"
+}

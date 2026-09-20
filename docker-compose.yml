@@ -1,0 +1,12 @@
+services:
+  pulseguard:
+    build: .
+    container_name: pulseguard-uptime
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/server/data
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
