@@ -4,7 +4,10 @@ import nodemailer from 'nodemailer';
 // Configuration (can be overridden via GitHub Secrets / Environment variables)
 const VPS_HOST = process.env.VPS_HOST || '168.231.119.84';
 const VPS_PORT = parseInt(process.env.VPS_PORT || '22', 10);
-const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '7000', 10);
+const WEBSITE_URL = process.env.WEBSITE_URL || 'https://bluemoonrestaurants.com/';
+const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '8000', 10);
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 3000;
 
 const GMAIL_USER = process.env.GMAIL_USER || 'aaronaji047@gmail.com';
 const GMAIL_PASS = process.env.GMAIL_PASS || 'rgnzdlkylwnmdlpx';
@@ -15,6 +18,11 @@ const CALLMEBOT_RECIPIENTS = [
   { phone: '61466588037', apiKey: process.env.CALLMEBOT_KEY_2 || '' }
 ];
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 1. Check TCP Port (SSH / HTTP / custom port)
 function checkTcpPort(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const startTime = performance.now();
@@ -36,7 +44,7 @@ function checkTcpPort(host, port, timeoutMs) {
       if (!resolved) {
         resolved = true;
         socket.destroy();
-        resolve({ isUp: false, error: `Connection timed out after ${timeoutMs}ms` });
+        resolve({ isUp: false, error: `TCP connection timed out after ${timeoutMs}ms` });
       }
     });
 
@@ -50,6 +58,53 @@ function checkTcpPort(host, port, timeoutMs) {
 
     socket.connect(port, host);
   });
+}
+
+// 2. Check Website HTTPS URL
+async function checkHttpUrl(url, timeoutMs) {
+  const startTime = performance.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'PulseGuard-Watchdog/2.0' }
+    });
+    clearTimeout(timer);
+    const latencyMs = Math.round(performance.now() - startTime);
+
+    if (res.status >= 200 && res.status < 400) {
+      return { isUp: true, latencyMs, status: res.status };
+    } else {
+      return { isUp: false, error: `HTTP ${res.status} ${res.statusText}`, status: res.status };
+    }
+  } catch (err) {
+    clearTimeout(timer);
+    const msg = err.name === 'AbortError' ? `HTTP request timed out after ${timeoutMs}ms` : err.message;
+    return { isUp: false, error: msg };
+  }
+}
+
+// 3. Combined Single Check (Attempts TCP and HTTPS)
+async function performSingleHealthCheck() {
+  const [tcpRes, httpRes] = await Promise.all([
+    checkTcpPort(VPS_HOST, VPS_PORT, TIMEOUT_MS),
+    checkHttpUrl(WEBSITE_URL, TIMEOUT_MS)
+  ]);
+
+  // If either the website HTTPS or the TCP port is reachable, the server is UP!
+  if (httpRes.isUp || tcpRes.isUp) {
+    const latencies = [];
+    if (httpRes.isUp) latencies.push(`Web: ${httpRes.latencyMs}ms`);
+    if (tcpRes.isUp) latencies.push(`Port ${VPS_PORT}: ${tcpRes.latencyMs}ms`);
+    return { isUp: true, summary: latencies.join(', ') };
+  }
+
+  return {
+    isUp: false,
+    error: `TCP: ${tcpRes.error} | Web: ${httpRes.error}`
+  };
 }
 
 async function sendOutageEmail(errorReason, timestamp) {
@@ -75,24 +130,28 @@ async function sendOutageEmail(errorReason, timestamp) {
           </div>
           <h2 style="margin: 0 0 12px 0; color: #991b1b; font-size: 20px;">Hostinger Ubuntu VPS is DOWN</h2>
           <p style="color: #4b5563; font-size: 14px; line-height: 1.5;">
-            GitHub Actions automated watchdog detected that your VPS server failed to respond.
+            GitHub Actions automated watchdog confirmed an outage after <strong>${MAX_RETRIES} consecutive failed attempts</strong>.
           </p>
           <table style="width: 100%; border-collapse: collapse; margin-top: 16px; margin-bottom: 24px; font-size: 14px;">
             <tr style="border-bottom: 1px solid #fed7aa;">
               <td style="padding: 10px 0; color: #6b7280; width: 140px;">Target Server:</td>
-              <td style="padding: 10px 0; color: #111827; font-weight: bold; font-family: monospace;">${VPS_HOST}:${VPS_PORT} (SSH)</td>
+              <td style="padding: 10px 0; color: #111827; font-weight: bold; font-family: monospace;">${VPS_HOST}:${VPS_PORT}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #fed7aa;">
+              <td style="padding: 10px 0; color: #6b7280;">Website URL:</td>
+              <td style="padding: 10px 0; color: #111827; font-family: monospace;">${WEBSITE_URL}</td>
             </tr>
             <tr style="border-bottom: 1px solid #fed7aa;">
               <td style="padding: 10px 0; color: #6b7280;">Failure Reason:</td>
               <td style="padding: 10px 0; color: #dc2626; font-weight: 600;">${errorReason}</td>
             </tr>
             <tr style="border-bottom: 1px solid #fed7aa;">
-              <td style="padding: 10px 0; color: #6b7280;">Time of Check:</td>
+              <td style="padding: 10px 0; color: #6b7280;">Time of Outage:</td>
               <td style="padding: 10px 0; color: #111827;">${timestamp}</td>
             </tr>
           </table>
           <p style="color: #9ca3af; font-size: 12px; border-top: 1px solid #fed7aa; padding-top: 12px; margin: 0;">
-            Sent by GitHub Actions 24/7 Watchdog for PulseGuard.
+            Sent by GitHub Actions 24/7 Watchdog for PulseGuard (Verified with 3x retry protection).
           </p>
         </div>
       `
@@ -105,7 +164,7 @@ async function sendOutageEmail(errorReason, timestamp) {
 }
 
 async function sendWhatsAppAlerts(errorReason, timestamp) {
-  const text = `🚨 *PULSEGUARD ALERT: VPS IS DOWN*\n\n*Server:* Hostinger Ubuntu VPS\n*Target:* ${VPS_HOST}:${VPS_PORT}\n*Error:* ${errorReason}\n*Time:* ${timestamp}\n\nPlease check your VPS immediately.`;
+  const text = `🚨 *PULSEGUARD ALERT: VPS IS DOWN*\n\n*Server:* Hostinger Ubuntu VPS\n*Target:* ${VPS_HOST}:${VPS_PORT}\n*Website:* ${WEBSITE_URL}\n*Error:* ${errorReason}\n*Verified:* Failed ${MAX_RETRIES} consecutive checks\n*Time:* ${timestamp}\n\nPlease check your VPS immediately.`;
 
   for (const item of CALLMEBOT_RECIPIENTS) {
     if (!item.apiKey) continue;
@@ -121,23 +180,38 @@ async function sendWhatsAppAlerts(errorReason, timestamp) {
 
 async function run() {
   const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-  console.log(`[Watchdog] Checking ${VPS_HOST}:${VPS_PORT} at ${timestamp}...`);
+  console.log(`[Watchdog] Checking Hostinger VPS (${VPS_HOST}:${VPS_PORT}) & Website (${WEBSITE_URL}) at ${timestamp}...`);
 
-  const result = await checkTcpPort(VPS_HOST, VPS_PORT, TIMEOUT_MS);
+  let lastError = '';
 
-  if (result.isUp) {
-    console.log(`✅ [Watchdog] VPS is UP and healthy! Response latency: ${result.latencyMs}ms`);
-    process.exit(0);
-  } else {
-    console.error(`❌ [Watchdog] VPS is DOWN! Cause: ${result.error}`);
-    console.log(`[Watchdog] Dispatching emergency notifications...`);
-    await Promise.all([
-      sendOutageEmail(result.error, timestamp),
-      sendWhatsAppAlerts(result.error, timestamp)
-    ]);
-    // Exit with code 1 so GitHub Actions flags the run as failed for visibility
-    process.exit(1);
+  // Retry loop: only declare DOWN if ALL MAX_RETRIES fail consecutively
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[Watchdog] Attempt ${attempt}/${MAX_RETRIES}...`);
+    const check = await performSingleHealthCheck();
+
+    if (check.isUp) {
+      console.log(`✅ [Watchdog] VPS & Website are UP and healthy! (${check.summary})`);
+      process.exit(0);
+    }
+
+    lastError = check.error;
+    console.warn(`⚠️ [Watchdog] Attempt ${attempt} failed: ${lastError}`);
+
+    if (attempt < MAX_RETRIES) {
+      console.log(`[Watchdog] Waiting ${RETRY_DELAY_MS / 1000}s before retry...`);
+      await sleep(RETRY_DELAY_MS);
+    }
   }
+
+  // If we reach here, ALL attempts failed
+  console.error(`❌ [Watchdog] VPS confirmed DOWN after ${MAX_RETRIES} attempts! Cause: ${lastError}`);
+  console.log(`[Watchdog] Dispatching emergency notifications...`);
+  await Promise.all([
+    sendOutageEmail(lastError, timestamp),
+    sendWhatsAppAlerts(lastError, timestamp)
+  ]);
+
+  process.exit(1);
 }
 
 run();
