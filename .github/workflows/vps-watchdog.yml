@@ -28,8 +28,8 @@ jobs:
       - name: Run VPS Watchdog Ping
         env:
           VPS_HOST: '168.231.119.84'
-          VPS_PORT: '22'
-          TIMEOUT_MS: '8000'
+          VPS_PORT: '443'
+          TIMEOUT_MS: '10000'
           GMAIL_USER: ${{ secrets.GMAIL_USER || 'aaronaji047@gmail.com' }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS || 'rgnzdlkylwnmdlpx' }}
           RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS || 'aaronaji047@gmail.com, shinchan.aaron1@gmail.com, bijoyhornsby@gmail.com' }}

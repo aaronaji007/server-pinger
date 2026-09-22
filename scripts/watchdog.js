@@ -3,11 +3,11 @@ import nodemailer from 'nodemailer';
 
 // Configuration (can be overridden via GitHub Secrets / Environment variables)
 const VPS_HOST = process.env.VPS_HOST || '168.231.119.84';
-const VPS_PORT = parseInt(process.env.VPS_PORT || '22', 10);
+const VPS_PORT = parseInt(process.env.VPS_PORT || '443', 10);
 const WEBSITE_URL = process.env.WEBSITE_URL || 'https://bluemoonrestaurants.com/';
-const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '8000', 10);
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 3000;
+const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '10000', 10);
+const MAX_RETRIES = 4;
+const RETRY_DELAY_MS = 15000;
 
 const GMAIL_USER = process.env.GMAIL_USER || 'aaronaji047@gmail.com';
 const GMAIL_PASS = process.env.GMAIL_PASS || 'rgnzdlkylwnmdlpx';
@@ -151,7 +151,7 @@ async function sendOutageEmail(errorReason, timestamp) {
             </tr>
           </table>
           <p style="color: #9ca3af; font-size: 12px; border-top: 1px solid #fed7aa; padding-top: 12px; margin: 0;">
-            Sent by GitHub Actions 24/7 Watchdog for PulseGuard (Verified with 3x retry protection).
+            Sent by GitHub Actions 24/7 Watchdog for PulseGuard (Verified with ${MAX_RETRIES}x retry protection across 1.5+ minutes).
           </p>
         </div>
       `
